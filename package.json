@@ -1,0 +1,31 @@
+{
+  "name": "telstra-network-explorer",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "typecheck": "tsc --noEmit",
+    "data:generate": "node scripts/generate-data.mjs",
+    "test": "node --test tests/*.test.mjs",
+    "preview": "serve out",
+    "test:browser": "node scripts/browser-check.mjs"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "next": "^16.2.0",
+    "pixi.js": "^8.17.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.186.0",
+    "serve": "^14.2.4",
+    "typescript": "^5.9.0"
+  }
+}
