@@ -1,5 +1,7 @@
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+const network=JSON.parse(readFileSync(new URL('../public/data/network.json',import.meta.url),'utf8'));
 import {PerspectiveCamera,Vector3,Euler,Raycaster,Vector2,Sphere,Quaternion} from 'three';
 const browser=await chromium.launch({headless:true});
 try{
@@ -11,6 +13,9 @@ try{
  await ready();await page.waitForTimeout(600);await page.screenshot({path:'/tmp/telstra-welcome.png'});
  await page.getByRole('button',{name:'ENTER',exact:true}).click();await page.waitForTimeout(600);
  await page.screenshot({path:'/tmp/telstra-globe.png'});
+ assert.equal(await canvas.getAttribute('data-overlay-renderer'),'three');
+ assert.ok(Number(await canvas.getAttribute('data-line-count'))>=network.connections.length);
+ assert.ok(Number(await canvas.getAttribute('data-visible-marker-count'))<Number(await canvas.getAttribute('data-marker-count')),'Far hemisphere markers must be hidden');
  const bounds=await canvas.boundingBox();
  const camera=new PerspectiveCamera(38,bounds.width/bounds.height,.1,100);
  camera.position.set(0,0,Number(await canvas.getAttribute('data-camera-distance')));camera.updateMatrixWorld();
@@ -52,8 +57,21 @@ try{
  const scale=Number(await canvas.getAttribute('data-scale'));
  await page.mouse.click(mapBounds.x+offsets[0]+(103.82+180)/360*4096*scale,mapBounds.y+offsets[1]+(90-1.35)/180*2048*scale);
  await page.locator('.location-card').getByText('Singapore',{exact:true}).first().waitFor();await page.getByRole('button',{name:'Close location details'}).click();
+ const route=network.connections.find(r=>r.from==='perth'&&r.to==='adelaide'&&!r.planned);
+ const longitude=(route.coordinates[1][0]+route.coordinates[2][0])/2;
+ const latitude=(route.coordinates[1][1]+route.coordinates[2][1])/2;
+ const rx=mapBounds.x+offsets[0]+(longitude+180)/360*4096*scale;
+ const ry=mapBounds.y+offsets[1]+(90-latitude)/180*2048*scale;
+ await page.mouse.move(rx,ry);
+ await page.waitForFunction(()=>document.querySelector('.map-canvas')?.getAttribute('data-hovered')?.startsWith('route:'));
+ await page.mouse.click(rx,ry);await page.locator('.route-card').getByText('Perth → Adelaide',{exact:true}).waitFor();
+ assert.equal(await page.locator('canvas[data-renderer="three"]').evaluate(el=>getComputedStyle(el).visibility),'visible','Three.js must continue rendering the overlays in 2D');
+ await page.screenshot({path:'/tmp/telstra-three-routes.png'});
+ await page.getByRole('button',{name:'Close route details'}).click();
  await page.getByRole('checkbox',{name:'Points of Presence',exact:true}).click();assert.equal(await page.getByRole('checkbox',{name:'Points of Presence',exact:true}).getAttribute('aria-checked'),'true');
  await page.getByRole('checkbox',{name:'Network',exact:true}).click();
+ assert.equal(await canvas.getAttribute('data-line-count'),'0');
+ assert.equal(Number(await canvas.getAttribute('data-marker-count')),network.locations.length);
  await page.getByRole('button',{name:'Switch to globe view'}).click();await ready();
  assert.equal(await page.getByRole('checkbox',{name:'Points of Presence',exact:true}).getAttribute('aria-checked'),'true');
  await page.getByRole('button',{name:'Filter by Country'}).click();await page.getByRole('combobox',{name:'Filter by country'}).selectOption('Australia');

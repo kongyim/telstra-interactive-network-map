@@ -3,12 +3,13 @@ import { useEffect, useRef, useState } from 'react';
 import { Application, Container, Sprite, Texture } from 'pixi.js';
 import * as THREE from 'three';
 import { drawAtlas, loadWorld } from '@/lib/atlas';
-import { atlasWidth, atlasHeight, project, visibleLocations, type Layers, type ViewMode } from '@/lib/network';
+import { NetworkOverlays } from '@/lib/network-overlays';
+import { atlasWidth, atlasHeight, type Layers, type ViewMode } from '@/lib/network';
 import { ALIGN_MS, MORPH_MS, SETTLE_MS, FLAT_WIDTH, FLAT_HEIGHT, INITIAL_YAW, INITIAL_PITCH, INITIAL_MAP_X, clamp, easeOut, lerp, wrapAngle, nearestAngle, morphVertex, spinDecay } from '@/lib/motion';
 
 export type MapProps = {
   mode: ViewMode; layers: Layers; country: string; selected: string | null;
-  onSelect: (id: string) => void; zoom: number; onZoom: (value: number) => void;
+  onSelect: (id: string) => void; selectedRoute: string | null; onSelectRoute: (id: string) => void; zoom: number; onZoom: (value: number) => void;
   reset: number; welcome?: boolean;
 };
 type Pose = { rate: number; yaw: number; pitch: number; panX: number; panY: number; zoom: number };
@@ -21,7 +22,7 @@ export default function NetworkMap(props: MapProps) {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
 
   // Both renderers live for the component lifetime. Three.js owns the real mesh
-  // deformation; Pixi takes over only once that mesh is a matching flat atlas.
+  // deformation and all network objects; Pixi supplies only the settled flat basemap.
   useEffect(() => {
     const element = host.current!;
     let disposed = false;
@@ -39,7 +40,8 @@ export default function NetworkMap(props: MapProps) {
       pixi.canvas.dataset.renderer = 'pixi';
       renderer.domElement.dataset.renderer = 'three';
       element.append(pixi.canvas, renderer.domElement);
-      const atlas = () => drawAtlas(image, latest.current.layers, latest.current.country, latest.current.selected);
+      let infrastructure = latest.current.layers.infrastructure;
+      const atlas = () => drawAtlas(image, infrastructure);
       let canvas = atlas();
       let pixiTexture = Texture.from(canvas);
       let globeTexture = new THREE.CanvasTexture(canvas);
@@ -55,6 +57,9 @@ export default function NetworkMap(props: MapProps) {
       const material = new THREE.MeshBasicMaterial({ map: globeTexture, side: THREE.DoubleSide });
       const surface = new THREE.Mesh(geometry, material);
       const group = new THREE.Group(); group.add(surface); scene.add(group);
+      const overlays = new NetworkOverlays(); group.add(overlays.group);
+      overlays.setState(latest.current.layers, latest.current.country, latest.current.selected, latest.current.selectedRoute);
+      cleanups.push(() => overlays.dispose());
       // Repeated flat neighbours cover dateline panning, just like the Pixi atlas.
       const neighbours = [-1, 1].map(i => { const mesh = new THREE.Mesh(new THREE.PlaneGeometry(FLAT_WIDTH, FLAT_HEIGHT), material); mesh.position.x = i * FLAT_WIDTH; group.add(mesh); return mesh; });
       const rimMaterial = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, uniforms: { opacity: { value: .43 } }, vertexShader: 'varying vec3 n; varying vec3 v; void main(){vec4 p=modelViewMatrix*vec4(position,1.0); n=normalize(normalMatrix*normal);v=normalize(-p.xyz);gl_Position=projectionMatrix*p;}', fragmentShader: 'uniform float opacity; varying vec3 n; varying vec3 v; void main(){float edge=pow(1.0-max(dot(normalize(n),normalize(v)),0.0),5.0);gl_FragColor=vec4(.12,.23,.27,edge*opacity);}' });
@@ -129,8 +134,15 @@ export default function NetworkMap(props: MapProps) {
         world.position.set((width - atlasWidth * scale) / 2 + pose.panX * atlasWidth * scale, (height - atlasHeight * scale) / 2 + pose.panY);
         const flat = !transition && pose.rate === 0;
         pixi.canvas.style.visibility = flat ? 'visible' : 'hidden';
-        renderer.domElement.style.visibility = flat ? 'hidden' : 'visible';
-        if (flat) pixi.render(); else renderer.render(scene, camera);
+        renderer.domElement.style.visibility = 'visible';
+        material.colorWrite = !flat;
+        if (flat) pixi.render();
+        overlays.update(pose.rate, camera, width, height);
+        renderer.render(scene, camera);
+        element.dataset.overlayRenderer = 'three';
+        element.dataset.lineCount = String(overlays.stats.lines);
+        element.dataset.markerCount = String(overlays.stats.markers);
+        element.dataset.visibleMarkerCount = String(overlays.stats.visibleMarkers);
         element.parentElement?.style.setProperty('--globe-amount', String(pose.rate));
         element.dataset.transition = transition ? 'running' : 'idle';
         element.dataset.morph = pose.rate.toFixed(5);
@@ -163,25 +175,16 @@ export default function NetworkMap(props: MapProps) {
         pose.yaw = nearestAngle(yaw, pose.yaw);
       };
       const select = (x: number, y: number) => {
-        const locations = visibleLocations(latest.current.layers, latest.current.country);
-        let match: { id: string; distance: number } | undefined;
-        if (pose.rate === 1) {
-          const hit = surfacePoint(x, y); if (!hit) return;
-          const local = localPoint(hit);
-          const lon = Math.atan2(local.x, local.z) * 180 / Math.PI, lat = Math.asin(clamp(local.y, -1, 1)) * 180 / Math.PI;
-          match = locations.map(l => ({ id: l.id, distance: Math.hypot(Math.min(Math.abs(l.longitude - lon), 360 - Math.abs(l.longitude - lon)) * Math.cos(lat * Math.PI / 180), l.latitude - lat) * pose.zoom / 4 })).sort((a, b) => a.distance - b.distance)[0];
-        } else {
-          const rect = element.getBoundingClientRect();
-          const u = (((x - rect.left - world.x) / scale) % atlasWidth + atlasWidth) % atlasWidth, v = (y - rect.top - world.y) / scale;
-          match = locations.map(l => { const p = project(l.longitude, l.latitude); return { id: l.id, distance: Math.hypot(Math.min(Math.abs(u - p.x), atlasWidth - Math.abs(u - p.x)), v - p.y) * scale / 16 }; }).sort((a, b) => a.distance - b.distance)[0];
-        }
-        if (match && match.distance < 1) latest.current.onSelect(match.id);
+        const rect = element.getBoundingClientRect();
+        const hit = overlays.pick(x - rect.left, y - rect.top, camera, width, height, surface);
+        if (hit?.kind === 'location') latest.current.onSelect(hit.id);
+        else if (hit?.kind === 'route') latest.current.onSelectRoute(hit.id);
       };
       const down = (e: PointerEvent) => {
         if (transition || e.button !== 0) return;
         const hit = pose.rate === 1 ? surfacePoint(e.clientX, e.clientY) : null;
         if (pose.rate === 1 && !hit) return;
-        angularVelocity = 0; mapVelocity = 0;
+        angularVelocity = 0; mapVelocity = 0; overlays.highlight(null); element.style.cursor = 'grabbing';
         pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         element.setPointerCapture(e.pointerId);
         if (pointers.size === 2) {
@@ -191,7 +194,16 @@ export default function NetworkMap(props: MapProps) {
         moved = false; start = { x: e.clientX, y: e.clientY }; previous = { ...start, time: performance.now() };
       };
       const move = (e: PointerEvent) => {
-        if (!pointers.has(e.pointerId) || transition) return;
+        if (transition) return;
+        if (!pointers.has(e.pointerId)) {
+          if (e.pointerType === 'mouse') {
+            const rect = element.getBoundingClientRect();
+            const hit = overlays.pick(e.clientX - rect.left, e.clientY - rect.top, camera, width, height, surface);
+            overlays.highlight(hit); element.style.cursor = hit ? 'pointer' : 'grab';
+            element.dataset.hovered = hit ? `${hit.kind}:${hit.id}` : '';
+          }
+          return;
+        }
         pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (pointers.size > 1) {
           const [a, b] = [...pointers.values()];
@@ -220,7 +232,7 @@ export default function NetworkMap(props: MapProps) {
         if (wasPinch) { stop(); return; }
         if (!moved) { angularVelocity = 0; mapVelocity = 0; select(e.clientX, e.clientY); }
         if (performance.now() - previous.time > 100 || reducedMotion.matches) { angularVelocity = 0; mapVelocity = 0; }
-        activePointer = null; anchor = null;
+        activePointer = null; anchor = null; element.style.cursor = 'grab';
       };
       const cancel = () => stop();
       const wheel = (e: WheelEvent) => {
@@ -237,10 +249,15 @@ export default function NetworkMap(props: MapProps) {
       };
       commands.current = {
         redraw: () => {
-          canvas = atlas(); const oldPixi = pixiTexture, oldGlobe = globeTexture;
-          pixiTexture = Texture.from(canvas); sprites.forEach(s => s.texture = pixiTexture);
-          globeTexture = new THREE.CanvasTexture(canvas); globeTexture.colorSpace = THREE.SRGBColorSpace; globeTexture.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 8);
-          material.map = globeTexture; material.needsUpdate = true; oldPixi.destroy(true); oldGlobe.dispose(); render();
+          overlays.setState(latest.current.layers, latest.current.country, latest.current.selected, latest.current.selectedRoute);
+          if (infrastructure !== latest.current.layers.infrastructure) {
+            infrastructure = latest.current.layers.infrastructure;
+            canvas = atlas(); const oldPixi = pixiTexture, oldGlobe = globeTexture;
+            pixiTexture = Texture.from(canvas); sprites.forEach(s => s.texture = pixiTexture);
+            globeTexture = new THREE.CanvasTexture(canvas); globeTexture.colorSpace = THREE.SRGBColorSpace; globeTexture.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 8);
+            material.map = globeTexture; material.needsUpdate = true; oldPixi.destroy(true); oldGlobe.dispose();
+          }
+          render();
         },
         changeMode: requestMode,
         zoom: () => { if (transition) { if (latest.current.zoom !== 1) latest.current.onZoom(1); return; } pose.zoom = latest.current.zoom; render(); },
@@ -266,7 +283,7 @@ export default function NetworkMap(props: MapProps) {
     initialize().catch(error => { console.error(error); cleanups.reverse().forEach(fn => fn()); cleanups.length = 0; if (!disposed) setStatus('error'); });
     return () => { disposed = true; commands.current = { redraw: () => {}, changeMode: () => {}, zoom: () => {}, reset: () => {} }; cleanups.reverse().forEach(fn => fn()); };
   }, []);
-  useEffect(() => { commands.current.redraw(); }, [props.layers, props.country, props.selected]);
+  useEffect(() => { commands.current.redraw(); }, [props.layers, props.country, props.selected, props.selectedRoute]);
   useEffect(() => { commands.current.changeMode(); }, [props.mode]);
   useEffect(() => { commands.current.zoom(); }, [props.zoom]);
   useEffect(() => { commands.current.reset(); }, [props.reset]);
