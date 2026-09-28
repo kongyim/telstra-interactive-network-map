@@ -181,7 +181,7 @@ export default function NetworkMap(props: MapProps) {
         else if (hit?.kind === 'route') latest.current.onSelectRoute(hit.id);
       };
       const down = (e: PointerEvent) => {
-        if (transition || e.button !== 0) return;
+        if (transition || latest.current.welcome || e.button !== 0) return;
         const hit = pose.rate === 1 ? surfacePoint(e.clientX, e.clientY) : null;
         if (pose.rate === 1 && !hit) return;
         angularVelocity = 0; mapVelocity = 0; overlays.highlight(null); element.style.cursor = 'grabbing';
@@ -236,7 +236,7 @@ export default function NetworkMap(props: MapProps) {
       };
       const cancel = () => stop();
       const wheel = (e: WheelEvent) => {
-        e.preventDefault(); if (transition) return;
+        e.preventDefault(); if (transition || latest.current.welcome) return;
         angularVelocity = 0; mapVelocity = 0;
         const hit = pose.rate === 1 ? surfacePoint(e.clientX, e.clientY) : null;
         const grabbed = hit ? localPoint(hit) : null;

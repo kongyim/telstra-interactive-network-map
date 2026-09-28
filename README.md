@@ -13,7 +13,7 @@ npm install
 npm run dev
 ```
 
-Open http://localhost:3000 and select **ENTER**. Quick access opens a country filter directly.
+Open http://localhost:3000 and select **ENTER**. The existing globe eases upward from the landing page and shrinks into the centred explorer framing over 900 ms; the welcome text fades out and controls arrive as it settles. Quick access uses the same transition and preserves the selected country. Reduced-motion preference skips the animation.
 
 ## Views and interactions
 
@@ -87,3 +87,5 @@ The rewrite follows `Globe.coffee` (`update` and `onUpdate`), `SceneService.coff
 Markers use cached icon textures on `THREE.Sprite` objects with fixed screen sizing, upright camera-facing orientation, explicit far-hemisphere culling and object raycasting. Routes use sampled `THREE.Line` buffer geometry, `LineBasicMaterial` / `LineDashedMaterial`, a small surface offset and depth testing. Their vertices and marker anchors use the same distance-weighted morph as the geographic surface. Dateline crossings are split into separate geometry pieces; repeated flat tiles preserve continuous panning. Selected and hovered routes change material colour.
 
 The basemap texture contains no markers, routes or selection rings. Normal layer filtering and selection update object visibility/materials without generating a new atlas. Only toggling decorative infrastructure footprints changes the basemap texture. Shared geometries, icon textures and materials are disposed on unmount.
+
+The landing transition has a dedicated browser check: with the static preview running, use `npm run test:entry`. It samples the globe viewport throughout entry, checks continuous upward movement and canvas identity, and covers desktop, mobile, Quick access and reduced motion.

@@ -11,7 +11,7 @@ try{
  const canvas=page.locator('.map-canvas');
  const ready=()=>page.waitForFunction(()=>{const el=document.querySelector('.map-canvas');return el?.getAttribute('data-status')==='ready'&&el.getAttribute('data-transition')==='idle';});
  await ready();await page.waitForTimeout(600);await page.screenshot({path:'/tmp/telstra-welcome.png'});
- await page.getByRole('button',{name:'ENTER',exact:true}).click();await page.waitForTimeout(600);
+ await page.getByRole('button',{name:'ENTER',exact:true}).click();await page.waitForFunction(()=>document.querySelector('.app-shell')?.getAttribute('data-entry')==='complete');
  await page.screenshot({path:'/tmp/telstra-globe.png'});
  assert.equal(await canvas.getAttribute('data-overlay-renderer'),'three');
  assert.ok(Number(await canvas.getAttribute('data-line-count'))>=network.connections.length);
