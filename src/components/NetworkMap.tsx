@@ -121,7 +121,8 @@ export default function NetworkMap(props: MapProps) {
       };
       const render = () => {
         updateGeometry();
-        scale = Math.max(width / atlasWidth, height / atlasHeight) * pose.zoom;
+        // Flat-map zoom 1 fits the full latitude range exactly to the viewport.
+        scale = height / atlasHeight * pose.zoom;
         pose.panX = ((pose.panX + .5) % 1 + 1) % 1 - .5;
         const verticalLimit = Math.max(0, (atlasHeight * scale - height) / 2);
         pose.panY = clamp(pose.panY, -verticalLimit, verticalLimit);
@@ -211,7 +212,7 @@ export default function NetworkMap(props: MapProps) {
         pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (pointers.size > 1) {
           const [a, b] = [...pointers.values()];
-          if (pinchDistance > 0) { pose.zoom = clamp(pinchZoom * Math.hypot(a.x - b.x, a.y - b.y) / pinchDistance, .8, 2.5); latest.current.onZoom(pose.zoom); render(); }
+          if (pinchDistance > 0) { pose.zoom = clamp(pinchZoom * Math.hypot(a.x - b.x, a.y - b.y) / pinchDistance, latest.current.mode === 'map' ? 1 : .8, 2.5); latest.current.onZoom(pose.zoom); render(); }
           return;
         }
         if (e.pointerId !== activePointer) return;
@@ -246,7 +247,7 @@ export default function NetworkMap(props: MapProps) {
         const grabbed = hit ? localPoint(hit) : null;
         const rect = element.getBoundingClientRect();
         const mapX = (e.clientX - rect.left - world.x) / scale, mapY = (e.clientY - rect.top - world.y) / scale;
-        pose.zoom = clamp(pose.zoom * Math.exp(-e.deltaY * (e.deltaMode === 1 ? .025 : .001)), .8, 2.5); render();
+        pose.zoom = clamp(pose.zoom * Math.exp(-e.deltaY * (e.deltaMode === 1 ? .025 : .001)), latest.current.mode === 'map' ? 1 : .8, 2.5); render();
         if (grabbed) { const end = surfacePoint(e.clientX, e.clientY); if (end) dragGlobe(grabbed, end); }
         else if (pose.rate === 0) { pose.panX += (e.clientX - rect.left - (world.x + mapX * scale)) / (atlasWidth * scale); pose.panY += e.clientY - rect.top - (world.y + mapY * scale); }
         latest.current.onZoom(pose.zoom); render();
@@ -264,7 +265,7 @@ export default function NetworkMap(props: MapProps) {
           render();
         },
         changeMode: requestMode,
-        zoom: () => { if (transition) { if (latest.current.zoom !== 1) latest.current.onZoom(1); return; } pose.zoom = latest.current.zoom; render(); },
+        zoom: () => { if (transition) { if (latest.current.zoom !== 1) latest.current.onZoom(1); return; } pose.zoom = clamp(latest.current.zoom, latest.current.mode === 'map' ? 1 : .8, 2.5); render(); },
         reset: () => { stop(); transition = null; setEndpoint(latest.current.mode); latest.current.onZoom(1); render(); },
       };
       const observer = new ResizeObserver(resize); observer.observe(element);
