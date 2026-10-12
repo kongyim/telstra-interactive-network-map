@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Application, Container, Sprite, Texture } from 'pixi.js';
 import * as THREE from 'three';
 import { drawAtlas, loadWorld } from '@/lib/atlas';
+import { DragVelocity } from '@/lib/drag-velocity';
 import { Cartography } from '@/lib/cartography';
 import { NetworkOverlays } from '@/lib/network-overlays';
 import { atlasWidth, atlasHeight, type Layers, type ViewMode } from '@/lib/network';
@@ -72,14 +73,15 @@ export default function NetworkMap(props: MapProps) {
       const pose: Pose = { rate: latest.current.mode === 'globe' ? 1 : 0, yaw: INITIAL_YAW, pitch: INITIAL_PITCH, panX: INITIAL_MAP_X, panY: 0, zoom: latest.current.zoom };
       if (!pose.rate) { pose.yaw = 0; pose.pitch = 0; }
       let transition: Transition | null = null;
-      let lastRate = -1, width = 1, height = 1, scale = 1, angularVelocity = 0, mapVelocity = 0;
+      let lastRate = -1, width = 1, height = 1, scale = 1, angularVelocity = 0, pitchVelocity = 0, mapVelocity = 0, mapYVelocity = 0;
+      const dragVelocity = new DragVelocity();
       let activePointer: number | null = null, anchor: THREE.Vector3 | null = null;
       let previous = { x: 0, y: 0, time: 0 }, start = { x: 0, y: 0 }, moved = false;
       const pointers = new Map<number, { x: number; y: number }>();
-      let pinchDistance = 0, pinchZoom = 1;
+      let pinchDistance = 0, pinchZoom = 1, edgeDragging = false;
       let previousTime = performance.now();
       const sphere = new THREE.Sphere(new THREE.Vector3(), 1), ray = new THREE.Raycaster();
-      const stop = () => { angularVelocity = 0; mapVelocity = 0; activePointer = null; anchor = null; pointers.clear(); pinchDistance = 0; };
+      const stop = () => { angularVelocity = 0; pitchVelocity = 0; mapVelocity = 0; mapYVelocity = 0; activePointer = null; anchor = null; pointers.clear(); pinchDistance = 0; };
       const setEndpoint = (mode: ViewMode) => {
         Object.assign(pose, mode === 'globe' ? { rate: 1, yaw: INITIAL_YAW, pitch: INITIAL_PITCH, panX: 0, panY: 0, zoom: 1 } : { rate: 0, yaw: 0, pitch: 0, panX: INITIAL_MAP_X, panY: 0, zoom: 1 });
       };
@@ -119,7 +121,7 @@ export default function NetworkMap(props: MapProps) {
         geometry.computeBoundingSphere();
         lastRate = pose.rate;
       };
-      const render = () => {
+      const render = (draw = true) => {
         updateGeometry();
         // Flat-map zoom 1 fits the full latitude range exactly to the viewport.
         scale = height / atlasHeight * pose.zoom;
@@ -141,9 +143,9 @@ export default function NetworkMap(props: MapProps) {
         pixi.canvas.style.visibility = flat ? 'visible' : 'hidden';
         renderer.domElement.style.visibility = 'visible';
         material.colorWrite = !flat;
-        if (flat) pixi.render();
+        if (draw && flat) pixi.render();
         overlays.update(pose.rate, camera, width, height);
-        renderer.render(scene, camera);
+        if (draw) renderer.render(scene, camera);
         element.dataset.overlayRenderer = 'three';
         element.dataset.lineCount = String(overlays.stats.lines);
         element.dataset.markerCount = String(overlays.stats.markers);
@@ -189,14 +191,14 @@ export default function NetworkMap(props: MapProps) {
         if (transition || latest.current.welcome || e.button !== 0) return;
         const hit = pose.rate === 1 ? surfacePoint(e.clientX, e.clientY) : null;
         if (pose.rate === 1 && !hit) return;
-        angularVelocity = 0; mapVelocity = 0; overlays.highlight(null); element.style.cursor = 'grabbing';
+        angularVelocity = 0; pitchVelocity = 0; mapVelocity = 0; mapYVelocity = 0; overlays.highlight(null); element.style.cursor = 'grabbing';
         pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         element.setPointerCapture(e.pointerId);
         if (pointers.size === 2) {
           const [a, b] = [...pointers.values()]; pinchDistance = Math.hypot(a.x - b.x, a.y - b.y); pinchZoom = pose.zoom; moved = true; anchor = null; return;
         }
         activePointer = e.pointerId; anchor = hit ? localPoint(hit) : null;
-        moved = false; start = { x: e.clientX, y: e.clientY }; previous = { ...start, time: performance.now() };
+        edgeDragging = false; moved = false; start = { x: e.clientX, y: e.clientY }; previous = { ...start, time: e.timeStamp }; dragVelocity.reset(e.timeStamp);
       };
       const move = (e: PointerEvent) => {
         if (transition) return;
@@ -216,33 +218,49 @@ export default function NetworkMap(props: MapProps) {
           return;
         }
         if (e.pointerId !== activePointer) return;
+        if (e.clientX === previous.x && e.clientY === previous.y) return;
         moved ||= Math.hypot(e.clientX - start.x, e.clientY - start.y) > 4;
-        const now = performance.now(), dt = Math.max(8, now - previous.time);
+        const now = e.timeStamp;
         if (anchor && pose.rate === 1) {
           const end = surfacePoint(e.clientX, e.clientY);
-          if (end) { const oldYaw = pose.yaw; dragGlobe(anchor, end); angularVelocity = clamp(wrapAngle(pose.yaw - oldYaw) / (dt / 1000), -8, 8); }
-          else angularVelocity = 0;
+          const oldYaw = pose.yaw, oldPitch = pose.pitch;
+          if (end && !edgeDragging) dragGlobe(anchor, end);
+          else {
+            // Captured drags continue beyond the globe silhouette. Keep using
+            // screen deltas for this gesture so re-entering cannot snap the anchor.
+            edgeDragging = true;
+            const radiansPerPixel = 2 * Math.tan(19 * Math.PI / 180) * (camera.position.z - 1) / height;
+            pose.yaw += (e.clientX - previous.x) * radiansPerPixel;
+            const limit = pose.zoom > 2 ? Math.PI * .49 : Math.PI * .3;
+            pose.pitch = clamp(pose.pitch + (e.clientY - previous.y) * radiansPerPixel, -limit, limit);
+          }
+          dragVelocity.add(wrapAngle(pose.yaw - oldYaw), pose.pitch - oldPitch, now);
         } else if (pose.rate === 0) {
           const dx = e.clientX - previous.x, dy = e.clientY - previous.y;
           pose.panX += dx / (atlasWidth * scale); pose.panY += dy;
-          mapVelocity = dx / (atlasWidth * scale) / (dt / 1000);
+          dragVelocity.add(dx / (atlasWidth * scale), dy, now);
         }
-        previous = { x: e.clientX, y: e.clientY, time: now }; render();
+        previous = { x: e.clientX, y: e.clientY, time: now }; render(false);
       };
       const up = (e: PointerEvent) => {
         if (!pointers.has(e.pointerId)) return;
         const wasPinch = pinchDistance > 0;
+        // Some devices deliver the final position only on pointerup.
+        if (!wasPinch && e.pointerId === activePointer && (e.clientX !== previous.x || e.clientY !== previous.y)) move(e);
+        const velocity = dragVelocity.release(e.timeStamp);
+        if (pose.rate === 1) { angularVelocity = clamp(velocity[0], -8, 8); pitchVelocity = clamp(velocity[1], -4, 4); }
+        else { mapVelocity = velocity[0]; mapYVelocity = velocity[1]; }
         pointers.delete(e.pointerId);
         if (element.hasPointerCapture(e.pointerId)) element.releasePointerCapture(e.pointerId);
         if (wasPinch) { stop(); return; }
-        if (!moved) { angularVelocity = 0; mapVelocity = 0; select(e.clientX, e.clientY); }
-        if (performance.now() - previous.time > 100 || reducedMotion.matches) { angularVelocity = 0; mapVelocity = 0; }
+        if (!moved) { angularVelocity = 0; pitchVelocity = 0; mapVelocity = 0; mapYVelocity = 0; select(e.clientX, e.clientY); }
+        if (reducedMotion.matches) { angularVelocity = 0; pitchVelocity = 0; mapVelocity = 0; mapYVelocity = 0; }
         activePointer = null; anchor = null; element.style.cursor = 'grab';
       };
       const cancel = () => stop();
       const wheel = (e: WheelEvent) => {
         e.preventDefault(); if (transition || latest.current.welcome) return;
-        angularVelocity = 0; mapVelocity = 0;
+        angularVelocity = 0; pitchVelocity = 0; mapVelocity = 0; mapYVelocity = 0;
         const hit = pose.rate === 1 ? surfacePoint(e.clientX, e.clientY) : null;
         const grabbed = hit ? localPoint(hit) : null;
         const rect = element.getBoundingClientRect();
@@ -282,6 +300,13 @@ export default function NetworkMap(props: MapProps) {
           // One gentle revolution every three minutes while the welcome globe is visible.
           if (latest.current.welcome && pose.rate === 1) pose.yaw = wrapAngle(pose.yaw + (Math.PI * 2 / 180) * dt / 1000);
           if (Math.abs(angularVelocity) > .001) { pose.yaw += angularVelocity * dt / 1000; angularVelocity *= spinDecay(dt); }
+          if (Math.abs(pitchVelocity) > .001) {
+            const limit = pose.zoom > 2 ? Math.PI * .49 : Math.PI * .3;
+            const next = pose.pitch + pitchVelocity * dt / 1000;
+            pose.pitch = clamp(next, -limit, limit);
+            pitchVelocity = pose.pitch === next ? pitchVelocity * spinDecay(dt) : 0;
+          }
+          if (Math.abs(mapYVelocity) > .1) { pose.panY += mapYVelocity * dt / 1000; mapYVelocity *= Math.pow(.9, dt / 15); }
           if (Math.abs(mapVelocity) > .00001) { pose.panX += mapVelocity * dt / 1000; mapVelocity *= Math.pow(.9, dt / 15); }
         }
         render();

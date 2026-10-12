@@ -17,7 +17,7 @@ Open http://localhost:3000 and select **ENTER**. The existing globe eases upward
 
 ## Views and interactions
 
-- **Globe:** Three.js deformable globe with vector country outlines and a high-resolution land atlas and direct surface-grab controls. The point under the pointer stays anchored during a drag. Pitch is limited to ±54° at normal zoom; only horizontal rotation carries momentum after release, matching the legacy interaction. Empty-background drags do not rotate the globe.
+- **Globe:** Three.js deformable globe with vector country outlines and a high-resolution land atlas and direct surface-grab controls. The point under the pointer stays anchored during a drag. Pitch is limited to ±54° at normal zoom; both horizontal and vertical flicks carry momentum after release, with vertical movement stopping at the pitch limit. Empty-background drags do not rotate the globe.
 - **2D map:** PixiJS repeated basemap with horizontal wrapping and bounded vertical panning. A transparent Three.js canvas stays above it to render native markers and network routes in both views.
 - Switch views with the first toolbar button. Layers, country and selected location are shared. Switching uses the legacy 600 ms, quadratic-eased, distance-weighted vertex morph, with 400 ms alignment/zoom reset and a following 600 ms Asia-Pacific focus. Three.js renders the entire deformation; the settled flat basemap hands off to PixiJS while Three.js continues rendering the marker and line objects without remounting either renderer. Rapid toggles reverse from the current pose.
 - Scroll or use the vertical slider and + / − buttons to zoom. Reset returns to the initial Asia-Pacific view.
@@ -75,7 +75,7 @@ npm run preview -- --listen tcp://127.0.0.1:3000
 npm run test:browser
 ```
 
-The browser check tests the welcome screen, actual drag rotation and pan, map/globe marker selection, view switching, shared filters, zoom/reset, location search, help, mobile sizing, static JSON delivery mesh deformation, uninterrupted renderer reuse, surface-anchor tracking, horizontal-only release inertia, rapid reversals and reduced-motion behaviour. Screenshots are written to `/tmp/telstra-{welcome,globe,map,mobile}.png`.
+The browser check tests the welcome screen, actual drag rotation and pan, map/globe marker selection, view switching, shared filters, zoom/reset, location search, help, mobile sizing, static JSON delivery mesh deformation, uninterrupted renderer reuse, surface-anchor tracking, bounded release inertia, rapid reversals and reduced-motion behaviour. Screenshots are written to `/tmp/telstra-{welcome,globe,map,mobile}.png`.
 
 Technical references: [Next.js static exports](https://nextjs.org/docs/app/guides/static-exports), [PixiJS Application](https://pixijs.com/8.x/guides/components/application), [Three.js OrbitControls](https://threejs.org/docs/pages/OrbitControls.html).
 
@@ -102,3 +102,5 @@ This builds the app for `/telstra`, then replaces `../kongyim.github.io/telstra`
 Review and commit the generated `telstra/` files in `kongyim.github.io`. The site is configured for `https://kongyim.github.io/telstra/`. The Pages repository's root `.nojekyll` must remain present so GitHub serves `_next` assets; it already exists in the supplied repository.
 
 `npm run dev` and `npm run build` still target the domain root. After an export, run `npm run build` again before using the root-based `npm run preview`, or serve the GitHub Pages repository and open `/telstra/`.
+
+Run `node scripts/inertia-check.mjs` with the local development server running to check repeated horizontal/vertical flicks and held releases using real browser mouse events.

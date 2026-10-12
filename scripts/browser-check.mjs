@@ -36,7 +36,7 @@ try{
  assert.ok(Math.hypot(heldX-1080,heldY-490)<2,'Grabbed geographic point must stay beneath cursor');
  await page.waitForTimeout(700);
  const [releasedPitch,releasedYaw]=(await canvas.getAttribute('data-rotation')).split(',').map(Number);
- assert.ok(Math.abs(releasedPitch-dragPitch)<.00001,'Only horizontal rotation has release momentum');
+ assert.ok(Math.abs(releasedPitch)<=Math.PI*.3,'Vertical release momentum stays within globe pitch bounds');
  assert.ok(Math.abs(releasedYaw-dragYaw)>.001,'Horizontal release must carry momentum');
  assert.notEqual(await canvas.getAttribute('data-rotation'),rotation,'Globe drag must rotate');
  await page.getByRole('button',{name:'Reset map view'}).click();
