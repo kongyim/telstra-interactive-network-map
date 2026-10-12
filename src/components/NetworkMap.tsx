@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Application, Container, Sprite, Texture } from 'pixi.js';
 import * as THREE from 'three';
 import { drawAtlas, loadWorld } from '@/lib/atlas';
+import { Cartography } from '@/lib/cartography';
 import { NetworkOverlays } from '@/lib/network-overlays';
 import { atlasWidth, atlasHeight, type Layers, type ViewMode } from '@/lib/network';
 import { ALIGN_MS, MORPH_MS, SETTLE_MS, FLAT_WIDTH, FLAT_HEIGHT, INITIAL_YAW, INITIAL_PITCH, INITIAL_MAP_X, clamp, easeOut, lerp, wrapAngle, nearestAngle, morphVertex, spinDecay } from '@/lib/motion';
@@ -57,6 +58,8 @@ export default function NetworkMap(props: MapProps) {
       const material = new THREE.MeshBasicMaterial({ map: globeTexture, side: THREE.DoubleSide });
       const surface = new THREE.Mesh(geometry, material);
       const group = new THREE.Group(); group.add(surface); scene.add(group);
+      const cartography = new Cartography(image); group.add(cartography.group);
+      cleanups.push(() => cartography.dispose());
       const overlays = new NetworkOverlays(); group.add(overlays.group);
       overlays.setState(latest.current.layers, latest.current.country, latest.current.selected, latest.current.selectedRoute);
       cleanups.push(() => overlays.dispose());
@@ -109,6 +112,7 @@ export default function NetworkMap(props: MapProps) {
       };
       const updateGeometry = () => {
         if (lastRate === pose.rate) return;
+        cartography.update(pose.rate);
         const positions = geometry.attributes.position, uv = geometry.attributes.uv;
         for (let i = 0; i < positions.count; i++) positions.setXYZ(i, ...morphVertex(uv.getX(i), uv.getY(i), pose.rate));
         positions.needsUpdate = true;

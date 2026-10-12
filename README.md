@@ -2,7 +2,7 @@
 
 A frontend-only recreation of Kong Yim’s original Telstra interactive network experience, following the supplied 2017 screenshots. Built with **Next.js, TypeScript, PixiJS 8 and Three.js**.
 
-The welcome screen, white toolbar and sidebar, pale-blue cartography, globe shadow, coloured routes, category filters, legend and vertical zoom control reflect the original application. The geographic map texture and Telstra logo are copied from the supplied legacy project; all network information is newly generated fictional data. This is an independent portfolio demonstration, not an official Telstra service or coverage checker.
+The welcome screen, white toolbar and sidebar, pale-blue cartography, globe shadow, coloured routes, category filters, legend and vertical zoom control reflect the original application. The basemap uses locally bundled Natural Earth vector geography, and the Telstra logo is copied from the supplied legacy project; all network information is newly generated fictional data. This is an independent portfolio demonstration, not an official Telstra service or coverage checker.
 
 ## Local development
 
@@ -17,7 +17,7 @@ Open http://localhost:3000 and select **ENTER**. The existing globe eases upward
 
 ## Views and interactions
 
-- **Globe:** Three.js deformable globe with the original texture and direct surface-grab controls. The point under the pointer stays anchored during a drag. Pitch is limited to ±54° at normal zoom; only horizontal rotation carries momentum after release, matching the legacy interaction. Empty-background drags do not rotate the globe.
+- **Globe:** Three.js deformable globe with vector country outlines and a high-resolution land atlas and direct surface-grab controls. The point under the pointer stays anchored during a drag. Pitch is limited to ±54° at normal zoom; only horizontal rotation carries momentum after release, matching the legacy interaction. Empty-background drags do not rotate the globe.
 - **2D map:** PixiJS repeated basemap with horizontal wrapping and bounded vertical panning. A transparent Three.js canvas stays above it to render native markers and network routes in both views.
 - Switch views with the first toolbar button. Layers, country and selected location are shared. Switching uses the legacy 600 ms, quadratic-eased, distance-weighted vertex morph, with 400 ms alignment/zoom reset and a following 600 ms Asia-Pacific focus. Three.js renders the entire deformation; the settled flat basemap hands off to PixiJS while Three.js continues rendering the marker and line objects without remounting either renderer. Rapid toggles reverse from the current pose.
 - Scroll or use the vertical slider and + / − buttons to zoom. Reset returns to the initial Asia-Pacific view.
@@ -56,7 +56,8 @@ Edit `scripts/generate-data.mjs` to regenerate the deterministic dataset, or edi
 - `src/lib/network-overlays.ts`: shared icon sprites, sampled line geometry, dashes, visibility, raycasting, highlighting and disposal.
 - `src/lib/routes.ts`: sampling and dateline splitting for route geometry.
 - `src/lib/network.ts`: types, data access and geographic projection.
-- `public/assets/world.jpg`, `logo.svg`: original static assets from the supplied legacy source.
+- `public/data/world-polygons.json`: Natural Earth 1:50m country polygons, with attribution in `world-polygons.LICENSE.txt`. Land fills use an 8192 × 4096 atlas where supported; coastlines and borders render as Three.js geometry to remain crisp at zoom.
+- `public/assets/world.jpg`, `logo.svg`: retained original static assets; the JPEG is no longer used by the map.
 - `scripts/generate-data.mjs`: fictional global data generator.
 - `tests/data.test.mjs`: schema assumptions, coordinate bounds, references, connectivity and dateline continuity.
 
