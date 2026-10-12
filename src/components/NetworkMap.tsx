@@ -6,7 +6,7 @@ import { drawAtlas, loadWorld } from '@/lib/atlas';
 import { Cartography } from '@/lib/cartography';
 import { NetworkOverlays } from '@/lib/network-overlays';
 import { atlasWidth, atlasHeight, type Layers, type ViewMode } from '@/lib/network';
-import { ALIGN_MS, MORPH_MS, SETTLE_MS, FLAT_WIDTH, FLAT_HEIGHT, INITIAL_YAW, INITIAL_PITCH, INITIAL_MAP_X, clamp, easeOut, lerp, wrapAngle, nearestAngle, morphVertex, spinDecay } from '@/lib/motion';
+import { MAX_MAP_ZOOM, MAX_GLOBE_ZOOM, ALIGN_MS, MORPH_MS, SETTLE_MS, FLAT_WIDTH, FLAT_HEIGHT, INITIAL_YAW, INITIAL_PITCH, INITIAL_MAP_X, clamp, easeOut, lerp, wrapAngle, nearestAngle, morphVertex, spinDecay } from '@/lib/motion';
 
 export type MapProps = {
   mode: ViewMode; layers: Layers; country: string; selected: string | null;
@@ -212,7 +212,7 @@ export default function NetworkMap(props: MapProps) {
         pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (pointers.size > 1) {
           const [a, b] = [...pointers.values()];
-          if (pinchDistance > 0) { pose.zoom = clamp(pinchZoom * Math.hypot(a.x - b.x, a.y - b.y) / pinchDistance, latest.current.mode === 'map' ? 1 : .8, 2.5); latest.current.onZoom(pose.zoom); render(); }
+          if (pinchDistance > 0) { pose.zoom = clamp(pinchZoom * Math.hypot(a.x - b.x, a.y - b.y) / pinchDistance, latest.current.mode === 'map' ? 1 : .8, latest.current.mode === 'map' ? MAX_MAP_ZOOM : MAX_GLOBE_ZOOM); latest.current.onZoom(pose.zoom); render(); }
           return;
         }
         if (e.pointerId !== activePointer) return;
@@ -247,7 +247,7 @@ export default function NetworkMap(props: MapProps) {
         const grabbed = hit ? localPoint(hit) : null;
         const rect = element.getBoundingClientRect();
         const mapX = (e.clientX - rect.left - world.x) / scale, mapY = (e.clientY - rect.top - world.y) / scale;
-        pose.zoom = clamp(pose.zoom * Math.exp(-e.deltaY * (e.deltaMode === 1 ? .025 : .001)), latest.current.mode === 'map' ? 1 : .8, 2.5); render();
+        pose.zoom = clamp(pose.zoom * Math.exp(-e.deltaY * (e.deltaMode === 1 ? .025 : .001)), latest.current.mode === 'map' ? 1 : .8, latest.current.mode === 'map' ? MAX_MAP_ZOOM : MAX_GLOBE_ZOOM); render();
         if (grabbed) { const end = surfacePoint(e.clientX, e.clientY); if (end) dragGlobe(grabbed, end); }
         else if (pose.rate === 0) { pose.panX += (e.clientX - rect.left - (world.x + mapX * scale)) / (atlasWidth * scale); pose.panY += e.clientY - rect.top - (world.y + mapY * scale); }
         latest.current.onZoom(pose.zoom); render();
@@ -265,7 +265,7 @@ export default function NetworkMap(props: MapProps) {
           render();
         },
         changeMode: requestMode,
-        zoom: () => { if (transition) { if (latest.current.zoom !== 1) latest.current.onZoom(1); return; } pose.zoom = clamp(latest.current.zoom, latest.current.mode === 'map' ? 1 : .8, 2.5); render(); },
+        zoom: () => { if (transition) { if (latest.current.zoom !== 1) latest.current.onZoom(1); return; } pose.zoom = clamp(latest.current.zoom, latest.current.mode === 'map' ? 1 : .8, latest.current.mode === 'map' ? MAX_MAP_ZOOM : MAX_GLOBE_ZOOM); render(); },
         reset: () => { stop(); transition = null; setEndpoint(latest.current.mode); latest.current.onZoom(1); render(); },
       };
       const observer = new ResizeObserver(resize); observer.observe(element);

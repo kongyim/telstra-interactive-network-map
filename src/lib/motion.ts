@@ -3,6 +3,11 @@ export const MORPH_MS = 600;
 export const SETTLE_MS = 600;
 export const ALIGN_MS = 400;
 export const TAU = Math.PI * 2;
+export const MAX_GLOBE_ZOOM = 2.5;
+// Match the globe's central geographic scale at maximum zoom on landscape screens.
+// Its surface is one unit nearer than its centre: map zoom = pi / (2*tan(fov/2)*(distance-1)).
+const maxGlobeDistance = 1.2 / Math.sin(19 * Math.PI / 180) / MAX_GLOBE_ZOOM;
+export const MAX_MAP_ZOOM = Math.round(Math.PI / (2 * Math.tan(19 * Math.PI / 180) * (maxGlobeDistance - 1)) * 10) / 10;
 export const FLAT_WIDTH = TAU;
 export const FLAT_HEIGHT = Math.PI;
 export const INITIAL_YAW = -115 * Math.PI / 180;
