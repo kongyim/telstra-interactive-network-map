@@ -274,6 +274,8 @@ export default function NetworkMap(props: MapProps) {
         const dt = Math.min(50, now - previousTime); previousTime = now;
         if (transition) updateTransition(now);
         else if (activePointer === null && !reducedMotion.matches) {
+          // One gentle revolution every three minutes while the welcome globe is visible.
+          if (latest.current.welcome && pose.rate === 1) pose.yaw = wrapAngle(pose.yaw + (Math.PI * 2 / 180) * dt / 1000);
           if (Math.abs(angularVelocity) > .001) { pose.yaw += angularVelocity * dt / 1000; angularVelocity *= spinDecay(dt); }
           if (Math.abs(mapVelocity) > .00001) { pose.panX += mapVelocity * dt / 1000; mapVelocity *= Math.pow(.9, dt / 15); }
         }

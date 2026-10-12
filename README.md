@@ -89,3 +89,15 @@ Markers use cached icon textures on `THREE.Sprite` objects with fixed screen siz
 The basemap texture contains no markers, routes or selection rings. Normal layer filtering and selection update object visibility/materials without generating a new atlas. Only toggling decorative infrastructure footprints changes the basemap texture. Shared geometries, icon textures and materials are disposed on unmount.
 
 The landing transition has a dedicated browser check: with the static preview running, use `npm run test:entry`. It samples the globe viewport throughout entry, checks continuous upward movement and canvas identity, and covers desktop, mobile, Quick access and reduced motion.
+
+## Export to the GitHub Pages repository
+
+```sh
+npm run export
+```
+
+This builds the app for `/telstra`, then replaces `../kongyim.github.io/telstra` with the complete static output (HTML, JavaScript, CSS, textures and JSON). On this machine the destination is `/Users/kongyim/Desktop/kong/kongyim.github.io/telstra`. The destination is only replaced after a successful build. The command does not commit or push anything.
+
+Review and commit the generated `telstra/` files in `kongyim.github.io`. The site is configured for `https://kongyim.github.io/telstra/`. The Pages repository's root `.nojekyll` must remain present so GitHub serves `_next` assets; it already exists in the supplied repository.
+
+`npm run dev` and `npm run build` still target the domain root. After an export, run `npm run build` again before using the root-based `npm run preview`, or serve the GitHub Pages repository and open `/telstra/`.
