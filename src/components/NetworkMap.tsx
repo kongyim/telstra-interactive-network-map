@@ -79,6 +79,7 @@ export default function NetworkMap(props: MapProps) {
       let previous = { x: 0, y: 0, time: 0 }, start = { x: 0, y: 0 }, moved = false;
       const pointers = new Map<number, { x: number; y: number }>();
       let pinchDistance = 0, pinchZoom = 1, edgeDragging = false;
+      let lastDragRelease = -Infinity, wheelCarry = 0;
       let previousTime = performance.now();
       const sphere = new THREE.Sphere(new THREE.Vector3(), 1), ray = new THREE.Raycaster();
       const stop = () => { angularVelocity = 0; pitchVelocity = 0; mapVelocity = 0; mapYVelocity = 0; activePointer = null; anchor = null; pointers.clear(); pinchDistance = 0; };
@@ -192,6 +193,7 @@ export default function NetworkMap(props: MapProps) {
         const hit = pose.rate === 1 ? surfacePoint(e.clientX, e.clientY) : null;
         if (pose.rate === 1 && !hit) return;
         angularVelocity = 0; pitchVelocity = 0; mapVelocity = 0; mapYVelocity = 0; overlays.highlight(null); element.style.cursor = 'grabbing';
+        wheelCarry = 0;
         pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         element.setPointerCapture(e.pointerId);
         if (pointers.size === 2) {
@@ -255,17 +257,28 @@ export default function NetworkMap(props: MapProps) {
         if (wasPinch) { stop(); return; }
         if (!moved) { angularVelocity = 0; pitchVelocity = 0; mapVelocity = 0; mapYVelocity = 0; select(e.clientX, e.clientY); }
         if (reducedMotion.matches) { angularVelocity = 0; pitchVelocity = 0; mapVelocity = 0; mapYVelocity = 0; }
+        if (moved) { lastDragRelease = performance.now(); wheelCarry = 0; }
         activePointer = null; anchor = null; element.style.cursor = 'grab';
       };
       const cancel = () => stop();
       const wheel = (e: WheelEvent) => {
-        e.preventDefault(); if (transition || latest.current.welcome) return;
-        angularVelocity = 0; pitchVelocity = 0; mapVelocity = 0; mapYVelocity = 0;
+        e.preventDefault(); if (transition || latest.current.welcome || pointers.size > 0 || e.deltaY === 0) return;
+        let deltaY = e.deltaY;
+        // A trackpad finger lifting after a click-drag can also emit tiny scrolls.
+        // Require a deliberate scroll before changing zoom immediately after release.
+        if (!e.ctrlKey && e.deltaMode === 0 && performance.now() - lastDragRelease < 200) {
+          wheelCarry += deltaY;
+          if (Math.abs(wheelCarry) < 12) return;
+          deltaY = wheelCarry; lastDragRelease = -Infinity;
+        }
+        const nextZoom = clamp(pose.zoom * Math.exp(-deltaY * (e.deltaMode === 1 ? .025 : .001)), latest.current.mode === 'map' ? 1 : .8, latest.current.mode === 'map' ? MAX_MAP_ZOOM : MAX_GLOBE_ZOOM);
+        if (nextZoom === pose.zoom) return;
+        // Zoom changes the framing without cancelling an existing flick.
         const hit = pose.rate === 1 ? surfacePoint(e.clientX, e.clientY) : null;
         const grabbed = hit ? localPoint(hit) : null;
         const rect = element.getBoundingClientRect();
         const mapX = (e.clientX - rect.left - world.x) / scale, mapY = (e.clientY - rect.top - world.y) / scale;
-        pose.zoom = clamp(pose.zoom * Math.exp(-e.deltaY * (e.deltaMode === 1 ? .025 : .001)), latest.current.mode === 'map' ? 1 : .8, latest.current.mode === 'map' ? MAX_MAP_ZOOM : MAX_GLOBE_ZOOM); render();
+        pose.zoom = nextZoom; render();
         if (grabbed) { const end = surfacePoint(e.clientX, e.clientY); if (end) dragGlobe(grabbed, end); }
         else if (pose.rate === 0) { pose.panX += (e.clientX - rect.left - (world.x + mapX * scale)) / (atlasWidth * scale); pose.panY += e.clientY - rect.top - (world.y + mapY * scale); }
         latest.current.onZoom(pose.zoom); render();

@@ -35,6 +35,24 @@ try {
    console.log(`${mode} ${gesture}: coasted`);
   }
   await page.getByRole('button',{name:'Reset map view'}).click();
+  await canvas.evaluate(el=>el.addEventListener('pointerup',()=>{
+   el.dispatchEvent(new WheelEvent('wheel',{deltaX:30,deltaY:0,cancelable:true}));
+   el.dispatchEvent(new WheelEvent('wheel',{deltaY:1,cancelable:true}));
+  },{once:true}));
+  await page.mouse.move(800,420);await page.mouse.down();await page.mouse.move(870,420,{steps:3});
+  await page.mouse.up();await page.waitForTimeout(200);
+  const residual=await canvas.evaluate(el=>[el.dataset.releasePose,el.dataset.mode==='globe'?el.dataset.rotation:el.dataset.pan]);
+  assert.notEqual(residual[0],residual[1],`${mode}: residual scroll must not cancel flick`);
+  assert.equal(await page.getByRole('slider').inputValue(),'1');
+  await canvas.evaluate(el=>el.addEventListener('wheel',()=>{
+   el.dataset.afterScrollPose=el.dataset.mode==='globe'?el.dataset.rotation:el.dataset.pan;
+  },{once:true}));
+  await page.mouse.wheel(0,-100);await page.waitForTimeout(200);
+  const scrolling=await canvas.evaluate(el=>[el.dataset.afterScrollPose,el.dataset.mode==='globe'?el.dataset.rotation:el.dataset.pan]);
+  assert.notEqual(scrolling[0],scrolling[1],`${mode}: deliberate scroll must preserve momentum`);
+  assert.ok(Number(await page.getByRole('slider').inputValue())>1,'Deliberate scroll still zooms');
+  console.log(`${mode} residual trackpad scroll: coasted; deliberate scroll: zoomed`);
+  await page.getByRole('button',{name:'Reset map view'}).click();
   await page.mouse.move(800,420);await page.mouse.down();await page.mouse.move(850,420,{steps:3});
   await page.waitForTimeout(450);await page.mouse.up();await page.waitForTimeout(200);
   const values=await canvas.evaluate(el=>[el.dataset.releasePose,el.dataset.mode==='globe'?el.dataset.rotation:el.dataset.pan]);
