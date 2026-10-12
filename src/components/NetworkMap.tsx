@@ -41,7 +41,7 @@ export default function NetworkMap(props: MapProps) {
       renderer.domElement.dataset.renderer = 'three';
       element.append(pixi.canvas, renderer.domElement);
       let infrastructure = latest.current.layers.infrastructure;
-      const atlas = () => drawAtlas(image, infrastructure);
+      const atlas = () => drawAtlas(image, infrastructure, renderer.capabilities.maxTextureSize);
       let canvas = atlas();
       let pixiTexture = Texture.from(canvas);
       let globeTexture = new THREE.CanvasTexture(canvas);
@@ -49,7 +49,7 @@ export default function NetworkMap(props: MapProps) {
       globeTexture.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 8);
       cleanups.push(() => { pixiTexture.destroy(true); globeTexture.dispose(); });
       const world = new Container(); pixi.stage.addChild(world);
-      const sprites = [-1, 0, 1].map(i => { const s = new Sprite(pixiTexture); s.x = i * atlasWidth; world.addChild(s); return s; });
+      const sprites = [-1, 0, 1].map(i => { const s = new Sprite(pixiTexture); s.width = atlasWidth; s.height = atlasHeight; s.x = i * atlasWidth; world.addChild(s); return s; });
       const scene = new THREE.Scene();
       const camera = new THREE.PerspectiveCamera(38, 1, .1, 100);
       const geometry = new THREE.PlaneGeometry(FLAT_WIDTH, FLAT_HEIGHT, 128, 64);
